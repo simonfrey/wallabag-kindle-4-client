@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/alecthomas/kong"
+	"github.com/pkg/errors"
 	"github.com/simonfrey/wallabago"
 	"io/ioutil"
 	"log"
@@ -24,28 +25,32 @@ var CLI struct {
 	ReloadCommand string `kong:"default='dbus-send --system /default com.lab126.powerd.resuming int32:1',name='reload-command',help='Command to tell kindle to reload ebooks'"`
 }
 
-func main() {
-	kong.Parse(&CLI)
+var exists interface{}
+var fileFmt = "wb_%d.mobi"
 
+func main() {
+	// Load command parameters
+	kong.Parse(&CLI)
 	apiURL := CLI.WallabagUrl + "/api"
 
+	// Setup wallabag client
 	wallabago.SetConfig(wallabago.NewWallabagConfig(CLI.WallabagUrl, CLI.ClientID, CLI.ClientSecret, CLI.Username, CLI.Password))
 
-	fileFmt := "wb_%d.mobi"
+	//
+	// Check for currently existing files
 
+	// Load ids from ids.wb file
 	ids := []int{}
-
 	idsData, err := ioutil.ReadFile(path.Join(CLI.EbookBasePath, "ids.wb"))
 	if err == nil {
-
 		err = json.Unmarshal(idsData, &ids)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "Could not unmarshal ids"))
 		}
 	}
 
+	// Check if the files with the ids from ids.wb exist
 	ebookExists := make(map[int]bool, len(ids))
-
 	for _, id := range ids {
 		if _, err := os.Stat(path.Join(CLI.EbookBasePath, fmt.Sprintf(fileFmt, id))); err == nil {
 			ebookExists[id] = true
@@ -54,106 +59,111 @@ func main() {
 		ebookExists[id] = false
 	}
 
-	existingIds := []int{}
+	// Iterate over existing info and check if we need to archive any
 	for id, fileExists := range ebookExists {
 		if fileExists {
 			// Nothing to do
-			existingIds = append(existingIds, id)
 			continue
 		}
 
-		fmt.Println("ARCHIVE: ", id)
+		// An id exists in id file but not on filesystem. The ebook was deleted and we want
+		// to archive the entry in wallabag
+
+		log.Println("ARCHIVE: ", id)
 
 		archiveJson, err := json.Marshal(struct {
 			Archive int `json:"archive"`
 		}{Archive: 1})
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "Could not marshal archive body"))
 		}
 		// File does not exists anymore. Archive article
 		archiveUrl := fmt.Sprintf("%s/entries/%d.json", apiURL, id)
 		_, err = wallabago.APICall(archiveUrl, "PATCH", archiveJson)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "could not execute archive call"))
 		}
 
 	}
-	idsJson, err := json.Marshal(existingIds)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = ioutil.WriteFile(path.Join(CLI.EbookBasePath, "ids.wb"), idsJson, 0644)
-	if err != nil {
-		log.Fatal(err)
-	}
 
+	// Load all currently active entries from wallabag
 	entries, err := getNonArchivedEntries()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "could not get all non-archived entries"))
 	}
-
-	var exists interface{}
 
 	shouldExistsIDsMap := map[int]interface{}{}
 	shouldExistsIDs := []int{}
 
+	// Iterate over all entries and download the .mobi files
 	for _, entry := range entries {
-		mobiURL := fmt.Sprintf("%s/entries/%d/export.mobi", apiURL, entry.ID)
-
-		mobiData, err := wallabago.APICall(mobiURL, "GET", nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// Check if id already exists
-		if _, idExists := ebookExists[entry.ID]; !idExists {
-			fmt.Println("Create new file: ", entry.ID)
-			err = ioutil.WriteFile(path.Join(CLI.EbookBasePath, fmt.Sprintf(fileFmt, entry.ID)), mobiData, 0644)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-		}
+		// Add id to exist map
 		shouldExistsIDsMap[entry.ID] = exists
 		shouldExistsIDs = append(shouldExistsIDs, entry.ID)
 
+		// Check if id already exists
+		if _, idExists := ebookExists[entry.ID]; idExists {
+			// Entry exists. Skip download
+			continue
+		}
+
+		// Download mobi file
+		log.Printf("Download %d", entry.ID)
+
+		mobiURL := fmt.Sprintf("%s/entries/%d/export.mobi", apiURL, entry.ID)
+		mobiData, err := wallabago.APICall(mobiURL, "GET", nil)
+		if err != nil {
+			log.Fatal(errors.Wrapf(err, "could not download mobi data for %d", entry.ID))
+		}
+
+		err = ioutil.WriteFile(path.Join(CLI.EbookBasePath, fmt.Sprintf(fileFmt, entry.ID)), mobiData, 0644)
+		if err != nil {
+			log.Fatal(errors.Wrapf(err, "could not create mobi file for %d", entry.ID))
+		}
+
+		// Write current version of shouldExistIDs
 		idsJson, err := json.Marshal(shouldExistsIDs)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "could not marshal shouldExistsIDs"))
 		}
 		err = ioutil.WriteFile(path.Join(CLI.EbookBasePath, "ids.wb"), idsJson, 0644)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "could not write ids.wb"))
 		}
 	}
 
+	// Check if there are files, that are not meant to be in the filesystem anymore (as the entries where archived
+	// on the wallabag server)
 	for id, fileExists := range ebookExists {
 		if !fileExists {
-			// File does not exits anyways
+			// File does not exits. Nothing to do
 			continue
 		}
 		if _, shouldExists := shouldExistsIDsMap[id]; shouldExists {
-			// File should exists. Do nothing
+			// File should exists. Nothing to do
 			continue
 		}
 
 		// File should not exists. Delete it
 		err := os.Remove(path.Join(CLI.EbookBasePath, fmt.Sprintf(fileFmt, id)))
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrapf(err, "could not remove file for %d", id))
 		}
 	}
 
-	// Signal kindle to re-read the ebooks
-	commandToExecute := strings.Split(CLI.ReloadCommand, " ")
-	cmd := exec.Command(commandToExecute[0], commandToExecute[1:]...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Fatal(err)
+	// Signal kindle to re-read the ebook
+	if commandToExecute := strings.Split(strings.TrimSpace(CLI.ReloadCommand), " "); len(commandToExecute) > 0 {
+		cmd := exec.Command(commandToExecute[0], commandToExecute[1:]...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Fatal(errors.Wrapf(err, "could not execute reload command: %q", string(out)))
+		}
 	}
-	fmt.Println(string(out))
+
+	log.Println("Done")
 }
 
+// Copy of wallabago.GetAllEntries() with archive flag set to '0' in GetEntries call
 func getNonArchivedEntries() ([]wallabago.Item, error) {
 	page := -1
 	perPage := -1
@@ -168,7 +178,7 @@ func getNonArchivedEntries() ([]wallabago.Item, error) {
 		perPage = e.Limit
 		pages := e.Pages
 		for i := secondPage; i <= pages; i++ {
-			e, err := wallabago.GetEntries(wallabago.APICall, -1, -1, "", "", i, perPage, "")
+			e, err := wallabago.GetEntries(wallabago.APICall, 0, -1, "", "", i, perPage, "")
 			if err != nil {
 				log.Printf("GetAllEntries: GetEntries for page %d failed: %v", i, err)
 				return nil, err
