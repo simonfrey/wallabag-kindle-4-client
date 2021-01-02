@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"github.com/alecthomas/kong"
@@ -8,6 +9,7 @@ import (
 	"github.com/simonfrey/wallabago"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -23,6 +25,7 @@ var CLI struct {
 	EbookBasePath string `kong:"default='/mnt/base-us/documents',name='path',help='Base path where to place the ebooks',type='path'"`
 	WallabagUrl   string `kong:"default='https://app.wallabag.it',name='wallabag-server',help='Url of your wallabag server'"`
 	ReloadCommand string `kong:"default='dbus-send --system /default com.lab126.powerd.resuming int32:1',name='reload-command',help='Command to tell kindle to reload ebooks'"`
+	SkipTLS       bool   `kong:"default='false',name='skip-tls',help='Skip tls check. Good for using wallabag with ip'"`
 }
 
 var exists interface{}
@@ -36,6 +39,10 @@ func main() {
 	// Setup wallabag client
 	wallabago.SetConfig(wallabago.NewWallabagConfig(CLI.WallabagUrl, CLI.ClientID, CLI.ClientSecret, CLI.Username, CLI.Password))
 
+	// Set wallabag http client
+	if CLI.SkipTLS {
+		wallabago.HttpClient = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	}
 	//
 	// Check for currently existing files
 
@@ -87,7 +94,8 @@ func main() {
 	}
 
 	// Load all currently active entries from wallabag
-	entries, err := getNonArchivedEntries()
+	f := false
+	entries, err := wallabago.GetAllEntriesFiltered(&f, nil)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "could not get all non-archived entries"))
 	}
@@ -161,31 +169,4 @@ func main() {
 	}
 
 	log.Println("Done")
-}
-
-// Copy of wallabago.GetAllEntries() with archive flag set to '0' in GetEntries call
-func getNonArchivedEntries() ([]wallabago.Item, error) {
-	page := -1
-	perPage := -1
-	e, err := wallabago.GetEntries(wallabago.APICall, 0, -1, "", "", page, perPage, "")
-	if err != nil {
-		log.Println("GetAllEntries: first GetEntries call failed", err)
-		return nil, err
-	}
-	allEntries := e.Embedded.Items
-	if e.Total > len(allEntries) {
-		secondPage := e.Page + 1
-		perPage = e.Limit
-		pages := e.Pages
-		for i := secondPage; i <= pages; i++ {
-			e, err := wallabago.GetEntries(wallabago.APICall, 0, -1, "", "", i, perPage, "")
-			if err != nil {
-				log.Printf("GetAllEntries: GetEntries for page %d failed: %v", i, err)
-				return nil, err
-			}
-			tmpAllEntries := e.Embedded.Items
-			allEntries = append(allEntries, tmpAllEntries...)
-		}
-	}
-	return allEntries, err
 }
