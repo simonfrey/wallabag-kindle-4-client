@@ -1,10 +1,9 @@
-# github.com/Strubbl/wallabago v6.0.0+incompatible
-## explicit
 # github.com/alecthomas/kong v0.2.12
 ## explicit
 github.com/alecthomas/kong
-# github.com/pkg/errors v0.8.1
+# github.com/pkg/errors v0.9.1
+## explicit
 github.com/pkg/errors
-# github.com/simonfrey/wallabago v5.1.0+incompatible
+# github.com/simonfrey/wallabago v1.0.1-0.20210102114604-b7f379fdd6a7
 ## explicit
 github.com/simonfrey/wallabago

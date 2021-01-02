@@ -25,25 +25,35 @@ type Embedded struct {
 
 // Item represents individual items in API responses
 type Item struct {
-	Links          Links        `json:"_links"`
-	Annotations    []Annotation `json:"annotations"`
-	CreatedAt      WallabagTime `json:"created_at"`
-	Content        string       `json:"content"`
-	DomainName     string       `json:"domain_name"`
-	ID             int          `json:"id"`
-	IsArchived     int          `json:"is_archived"`
-	IsStarred      int          `json:"is_starred"`
-	Language       string       `json:"language"`
-	Mimetype       string       `json:"mimetype"`
-	PreviewPicture string       `json:"preview_picture"`
-	ReadingTime    int          `json:"reading_time"`
-	Tags           []Tag        `json:"tags"`
-	Title          string       `json:"title"`
-	UpdatedAt      WallabagTime `json:"updated_at"`
-	URL            string       `json:"url"`
-	UserEmail      string       `json:"user_email"`
-	UserID         int          `json:"user_id"`
-	UserName       string       `json:"user_name"`
+	Links          Links           `json:"_links"`
+	Annotations    []Annotation    `json:"annotations"`
+	ArchivedAt     *WallabagTime   `json:"archived_at"`
+	CreatedAt      *WallabagTime   `json:"created_at"`
+	Content        string          `json:"content"`
+	DomainName     string          `json:"domain_name"`
+	GivenURL       string          `json:"given_url"`
+	HashedGivenURL string          `json:"hashed_given_url"`
+	HashedURL      string          `json:"hashed_url"`
+	ID             int             `json:"id"`
+	IsArchived     int             `json:"is_archived"`
+	IsPublic       bool            `json:"is_public"`
+	IsStarred      int             `json:"is_starred"`
+	Language       string          `json:"language"`
+	Mimetype       string          `json:"mimetype"`
+	OriginURL      string          `json:"origin_url"`
+	PreviewPicture string          `json:"preview_picture"`
+	PublishedAt    *WallabagTime   `json:"published_at"`
+	PublishedBy    json.RawMessage `json:"published_by"`
+	ReadingTime    int             `json:"reading_time"`
+	StarredAt      *WallabagTime   `json:"starred_at"`
+	Tags           []Tag           `json:"tags"`
+	Title          string          `json:"title"`
+	UID            string          `json:"uid"`
+	UpdatedAt      *WallabagTime   `json:"updated_at"`
+	URL            string          `json:"url"`
+	UserEmail      string          `json:"user_email"`
+	UserID         int             `json:"user_id"`
+	UserName       string          `json:"user_name"`
 }
 
 // WallabagTimeLayout is a variation of RFC3339 but without colons in
@@ -58,12 +68,16 @@ type WallabagTime struct {
 // UnmarshalJSON parses the custom date format wallabag returns
 func (t *WallabagTime) UnmarshalJSON(buf []byte) (err error) {
 	s := strings.Trim(string(buf), `"`)
+	if s == "null" {
+		t.Time = time.Time{}
+		return err
+	}
 	t.Time, err = time.Parse(WallabagTimeLayout, s)
 	if err != nil {
 		t.Time = time.Time{}
-		return
+		return err
 	}
-	return
+	return err
 }
 
 // Links contains four links (self, first, last, next), being part of the Entries object
@@ -81,6 +95,7 @@ type Link struct {
 
 // GetEntries queries the API for articles according to the API request /entries
 func GetEntries(bodyByteGetterFunc BodyByteGetter, archive int, starred int, sort string, order string, page int, perPage int, tags string) (Entries, error) {
+	//TODO API now supports since, public and detail as additional parameters
 	var e Entries
 	entriesURL := Config.WallabagURL + "/api/entries.json?"
 	if archive == 0 || archive == 1 {
@@ -89,7 +104,7 @@ func GetEntries(bodyByteGetterFunc BodyByteGetter, archive int, starred int, sor
 	if starred == 0 || starred == 1 {
 		entriesURL += "starred=" + strconv.Itoa(starred) + "&"
 	}
-	if sort == "created" || sort == "updated" {
+	if sort == "created" || sort == "updated" || sort == "archived" {
 		entriesURL += "sort=" + sort + "&"
 	}
 	if order == "asc" || order == "desc" {
@@ -120,6 +135,52 @@ func GetAllEntries() ([]Item, error) {
 	page := -1
 	perPage := -1
 	e, err := GetEntries(APICall, -1, -1, "", "", page, perPage, "")
+	if err != nil {
+		log.Println("GetAllEntries: first GetEntries call failed", err)
+		return nil, err
+	}
+	allEntries := e.Embedded.Items
+	if e.Total > len(allEntries) {
+		secondPage := e.Page + 1
+		perPage = e.Limit
+		pages := e.Pages
+		for i := secondPage; i <= pages; i++ {
+			e, err := GetEntries(APICall, -1, -1, "", "", i, perPage, "")
+			if err != nil {
+				log.Printf("GetAllEntries: GetEntries for page %d failed: %v", i, err)
+				return nil, err
+			}
+			tmpAllEntries := e.Embedded.Items
+			allEntries = append(allEntries, tmpAllEntries...)
+		}
+	}
+	return allEntries, err
+}
+
+// GetAllEntriesFiltered calls GetEntries with the given archive and starred parameters parameters, thus returning all articles as []wallabago.Item which match the filter
+func GetAllEntriesFiltered(archive, starred *bool) ([]Item, error) {
+	archiveInt := -1
+	if archive != nil {
+		switch *archive {
+		case true:
+			archiveInt = 1
+		case false:
+			archiveInt = 0
+		}
+	}
+	starredInt := -1
+	if starred != nil {
+		switch *starred {
+		case true:
+			starredInt = 1
+		case false:
+			starredInt = 0
+		}
+	}
+
+	page := -1
+	perPage := -1
+	e, err := GetEntries(APICall, archiveInt, starredInt, "", "", page, perPage, "")
 	if err != nil {
 		log.Println("GetAllEntries: first GetEntries call failed", err)
 		return nil, err
