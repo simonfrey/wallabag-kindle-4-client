@@ -9,7 +9,9 @@ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINE
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/simonfrey/wallabago v1.0.0 h1:7MGkk5uDO4HBM0+CRamYAosU2QZe9r5s4L+O8iwmNLU=
-github.com/simonfrey/wallabago v1.0.1-0.20210102114604-b7f379fdd6a7 h1:/0KHjlDtGApUjJta61DugfTPCxL3qJshLWAgy0oEaKg=
-github.com/simonfrey/wallabago v1.0.1-0.20210102114604-b7f379fdd6a7/go.mod h1:f37HdXh99cxIyDpzvyMdFvz2LF5mG9fxPIHKL86sG74=
+github.com/simonfrey/wallabago v1.0.1-0.20210105101455-b4cc21c05e81 h1:sYIdLWkvj8x4ssJ+TCN93+2Ds6ta9B10ztF18oBxM6E=
+github.com/simonfrey/wallabago v1.0.1-0.20210105101455-b4cc21c05e81/go.mod h1:f37HdXh99cxIyDpzvyMdFvz2LF5mG9fxPIHKL86sG74=
+github.com/simonfrey/wallabago v5.1.0+incompatible h1:wblF9wGJjC+0OdLphmDjVKOsPEIpNPduJmZ2O26NfXI=
+github.com/simonfrey/wallabago v5.1.0+incompatible/go.mod h1:8wSfAaBZyqID3m2HaVsLBR95OC2eKVaHitQPYjCR16c=
 github.com/stretchr/testify v1.2.2 h1:bSDNvY7ZPG5RlJ8otE/7V6gMiyenm9RtJ7IUVIAoJ1w=
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=

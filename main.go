@@ -116,7 +116,7 @@ func main() {
 		}
 
 		// Download mobi file
-		log.Printf("Download %d", entry.ID)
+		log.Printf("Download %q [%d]", entry.Title, entry.ID)
 
 		mobiURL := fmt.Sprintf("%s/entries/%d/export.mobi", apiURL, entry.ID)
 		mobiData, err := wallabago.APICall(mobiURL, "GET", nil)
